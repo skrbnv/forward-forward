@@ -1,2 +1,4 @@
 /.vscode
 /MNIST
+__pycache__/
+libs/__pycache__/
