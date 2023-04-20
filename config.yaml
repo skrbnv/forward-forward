@@ -1,0 +1,4 @@
+dimensions:    [784, 100, 10]
+num_epochs:    20
+num_passes:    2
+num_classes:   10
