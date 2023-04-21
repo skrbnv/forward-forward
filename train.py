@@ -1,66 +1,64 @@
-from libs.classes import Model
-from libs.collate import Collate_Train, Collate_Test
+from libs.models import FFConvModel, is_ff
+from libs.loops import test_loop
 import libs.utils as _utils
+import libs.dataset as dataset
 import torch
-from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST
 from tqdm import tqdm
-import os
+import argparse
+import wandb
 
-
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+parser = argparse.ArgumentParser()
+parser.add_argument("--wandb", action="store_true", default=False, help="sync with W&B")
+args = parser.parse_args()
+WANDB = args.wandb
 CONFIG = _utils.load_yaml()
+if WANDB:
+    wprj = wandb.init(project=CONFIG.wandb.project, resume=False, config=CONFIG)
+    RUN_ID = wprj.id
+else:
+    RUN_ID = _utils.get_random_hash()
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = Model(
-    device=device, inner_sizes=CONFIG.dimensions, num_classes=CONFIG.num_classes
-)
-trainset = MNIST(root="./MNIST/train", train=True, download=True, transform=None)
-testset = MNIST(root="./MNIST/test", train=False, download=True, transform=None)
-train_loader = DataLoader(
-    trainset,
-    batch_size=16,
-    shuffle=True,
-    num_workers=0,
-    collate_fn=Collate_Train(device=device),
-)
-test_loader = DataLoader(
-    testset,
-    batch_size=16,
-    shuffle=True,
-    num_workers=0,
-    collate_fn=Collate_Test(device=device),
+model = FFConvModel(device=device, num_classes=CONFIG.num_classes)
+print(model)
+
+train_loader, test_loader, train_test_loader = dataset.generate(
+    CONFIG.dataset.batch_size, CONFIG.dataset.num_workers, device
 )
 
 
 for epoch in range(CONFIG.num_epochs):
-    print(f"├──────────── CYCLE {epoch + 1}/{CONFIG.num_epochs} ────────────")
+    print(f"├──────────── EPOCH {epoch + 1}/{CONFIG.num_epochs} ────────────")
     for i in range(model.layer_count()):
-        print(f"├ Optimizing layer {i+1}/{model.layer_count()}")
-        for _pass in range(CONFIG["num_passes"]):
+        if not is_ff(model.layers[i]):
+            print(
+                f"├ ..skipping layer {i+1}/{model.layer_count()}:"
+                f" {model.layers[i].__class__.__name__}"
+            )
+            continue
+        print(
+            f"├ Optimizing layer {i+1}/{model.layer_count()}:"
+            f" {model.layers[i].__class__.__name__} ({model.layers[i].name})"
+        )
+        for _pass in range(CONFIG.num_passes):
             # train
             loss = []
             zeros = 0
             for inputs, labels, statuses in (pbar := tqdm(train_loader)):
                 x, losses = model.update_layer(inputs, labels, statuses, i)
-                if torch.max(x) == 0:
-                    zeros += 1
                 loss += losses
                 pbar.set_description(
-                    f"├── [{zeros}] Pass {_pass+1}/{CONFIG.num_passes}: {torch.mean(torch.tensor(loss)).item():.4f}"
+                    f"├── Pass {_pass+1}/{CONFIG.num_passes}:"
+                    f" {torch.mean(torch.tensor(loss)).item():.4f}"
                 )
 
     # test
-    correct, total, zeros = 0, 0, 0
-    for inputs, labels, _ in (pbar := tqdm(test_loader)):
-        for i in range(inputs.size(0)):
-            x = model.goodness(
-                inputs[i].unsqueeze(0).repeat((CONFIG.num_classes, 1)),
-                torch.tensor([[el] for el in range(CONFIG.num_classes)]).to(device),
-            )
-            if x.max() == 0:
-                zeros += 1
-            correct += 1 if (torch.argmax(x) == labels[i]).item() is True else 0
-            total += 1
-            pbar.set_description_str(
-                f"├── [{zeros}] C: {correct}, T: {total}, Acc: {correct*100/total:.2f}%"
-            )
+    train_acc = test_loop(train_test_loader, model, CONFIG.num_classes, device)
+    test_acc = test_loop(test_loader, model, CONFIG.num_classes, device)
+
+    if WANDB:
+        wandb.log({"Training acc": train_acc, "Test acc": test_acc})
+
+    _utils.checkpoint(
+        id=RUN_ID, data={"epoch": epoch, "state_dict": model.state_dict()}
+    )

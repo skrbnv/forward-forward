@@ -1,6 +1,5 @@
 import torch
 import random
-from torchvision.transforms.functional import pil_to_tensor
 from torch.utils.data import default_collate
 from typing import Any
 
@@ -22,7 +21,6 @@ class Collate_Train:
                     [el for el in range(self.num_classes) if el != label]
                 )
                 status = -1
-            image = (pil_to_tensor(image) / 255.0).flatten()
             label = torch.tensor([label], dtype=torch.long)
             assert (status == 1 and label == true_label) or (
                 status == -1 and label != true_label
@@ -46,7 +44,6 @@ class Collate_Test:
         output = []
         for tpl in batch:
             image, label = tpl
-            image = (pil_to_tensor(image) / 255.0).flatten()
             label = torch.tensor([label], dtype=torch.long)
             output += [(image.to(self.device), label.to(self.device), 1)]
         return default_collate(output)

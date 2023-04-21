@@ -1,4 +1,11 @@
 dimensions:    [784, 100, 10]
-num_epochs:    20
-num_passes:    2
+num_epochs:    50
+num_passes:    5
 num_classes:   10
+
+wandb:
+  project:     Forward-Forward
+
+dataset:
+  batch_size:  [16, 16]
+  num_workers: [0, 0]
