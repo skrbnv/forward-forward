@@ -43,7 +43,6 @@ for epoch in range(CONFIG.num_epochs):
         for _pass in range(CONFIG.num_passes):
             # train
             loss = []
-            zeros = 0
             for inputs, labels, statuses in (pbar := tqdm(train_loader)):
                 x, losses = model.update_layer(inputs, labels, statuses, i)
                 loss += losses
