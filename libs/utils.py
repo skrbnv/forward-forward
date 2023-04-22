@@ -24,9 +24,9 @@ def report(*args):
         else:
             string += " " + str(arg)
     print(string)
-    log = open("run.log", "a+")
-    log.write(string + "\n")
-    log.close()
+    # log = open("run.log", "a+")
+    # log.write(string + "\n")
+    # log.close()
     return True
 
 

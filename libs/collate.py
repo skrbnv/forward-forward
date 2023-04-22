@@ -21,7 +21,7 @@ class Collate_Train:
                     [el for el in range(self.num_classes) if el != label]
                 )
                 status = -1
-            label = torch.tensor([label], dtype=torch.long)
+            label = torch.tensor(label, dtype=torch.long)
             assert (status == 1 and label == true_label) or (
                 status == -1 and label != true_label
             ), "Label generator broken!"
@@ -44,6 +44,6 @@ class Collate_Test:
         output = []
         for tpl in batch:
             image, label = tpl
-            label = torch.tensor([label], dtype=torch.long)
+            label = torch.tensor(label, dtype=torch.long)
             output += [(image.to(self.device), label.to(self.device), 1)]
         return default_collate(output)

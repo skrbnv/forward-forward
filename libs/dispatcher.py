@@ -28,8 +28,10 @@ class FFDispatcher:
 
     def goodness(self, inputs):
         if len(inputs.shape) == 4:
-            return torch.sum(inputs**2, dim=(-2, -1)).mean(-1)
+            return torch.sum(inputs**2, dim=(-2, -1)).mean(-1) / (
+                inputs.size(-1) * inputs.size(-2)
+            )
         elif len(inputs.shape) == 2:
-            return torch.sum(inputs**2)  # check for dims
+            return torch.sum(inputs**2, dim=-1) / inputs.size(-1)
         else:
             raise Exception(f"Cannot compute goodness for shape {inputs.shape}")

@@ -1,5 +1,5 @@
 from libs.collate import Collate_Train, Collate_Test
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import MNIST
 from torchvision import transforms
 
@@ -25,8 +25,11 @@ def generate(batch_size: list = [16, 16], num_workers: list = [0, 0], device="cp
     testset = MNIST(
         root="./MNIST/test", train=False, download=True, transform=transforms_test
     )
-    traintestset = MNIST(
-        root="./MNIST/train", train=True, download=True, transform=transforms_test
+    traintestset = Subset(
+        MNIST(
+            root="./MNIST/train", train=True, download=True, transform=transforms_test
+        ),
+        range(10000),
     )
     train_loader = DataLoader(
         trainset,
