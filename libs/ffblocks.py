@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.functional import one_hot
+from typing import Optional
 
 
 def is_ff(obj):
@@ -8,15 +9,25 @@ def is_ff(obj):
 
 
 class FFBlock(nn.Module):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        name: Optional[str] = "FFBlock",
+        threshold: Optional[float] = 2.0,
+        num_classes: Optional[int] = 10,
+        activation: Optional[nn.Module] = nn.ReLU(),
+        device: Optional[str] = "cpu",
+    ) -> None:
         super().__init__()
+        self.name = name
+        self.threshold = torch.tensor(threshold).to(device)
+        self.num_classes = num_classes
+        self.act = activation
+        self.norm_fn = None
         self.layer = None
-        self.act = None
         self.optimizer = None
-        self.activation = None
 
     def norm(self, x):
-        raise Exception("Not implemented")
+        return self.norm_fn(x)
 
     def loss(self):
         raise Exception("Not Implemented")
@@ -59,14 +70,15 @@ class FFConvBlock(FFBlock):
         num_classes=10,
         threshold=2.0,
     ):
-        super().__init__()
-        self.name = name
-        self.threshold = torch.tensor(threshold).to(device)
-        self.num_classes = num_classes
+        super().__init__(
+            name=name,
+            threshold=threshold,
+            num_classes=num_classes,
+            activation=activation,
+            device=device,
+        )
         self.norm_fn = norm if norm is not None else nn.BatchNorm2d(channels_in)
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
-        # self.norm = nn.BatchNorm2d(channels_in) if use_norm else nn.Identity()
-        self.act = activation
         self.optimizer = (
             torch.optim.SGD(self.parameters(), lr=1e-4)
             if optimizer is None
@@ -74,25 +86,18 @@ class FFConvBlock(FFBlock):
         )
         self.to(device)
 
+    """
     def norm(self, x):
         # dim = (2, 3)
         # return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
         return self.norm_fn(x)
+    """
 
     def loss(self, inputs, statuses):
         out = torch.sum(inputs**2, dim=(-2, -1)).mean(-1)
         loss = statuses * (self.threshold - out)
         loss = torch.log(1.0 + torch.exp(loss)).mean()
         return loss
-
-        # norm
-        """
-        elif len(x.shape) == 4:
-            dim = (2, 3)
-        else:
-            raise Exception("Incorrect data shape")
-        return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
-        """
 
     def merge(self, x, y):
         shape = x.shape
@@ -108,33 +113,32 @@ class FFConvBlock(FFBlock):
 class FFLinearBlock(FFBlock):
     def __init__(
         self,
-        ins,
-        outs,
-        name="FFLinearBlock",
-        optimizer=None,
-        device="cpu",
+        ins: int,
+        outs: int,
+        name: Optional[str] = "FFLinearBlock",
+        optimizer: Optional[nn.Module] = None,
+        device: Optional[str] = "cpu",
         norm=None,
         activation=nn.ReLU(),
         num_classes=10,
         threshold=2.0,
     ):
-        super().__init__()
-        self.name = name
-        self.threshold = torch.tensor(threshold).to(device)
+        super().__init__(
+            name=name,
+            threshold=threshold,
+            num_classes=num_classes,
+            activation=activation,
+            device=device,
+        )
         self.norm_fn = norm if norm is not None else nn.LayerNorm((ins))
-        self.num_classes = num_classes
         self.layer = nn.Linear(ins, outs, bias=True)
         # self.norm = nn.LayerNorm((ins)) if use_norm else nn.Identity()
-        self.act = activation
         self.optimizer = (
             optimizer
             if optimizer is not None
             else torch.optim.SGD(self.parameters(), lr=1e-4)
         )
         self.to(device)
-
-    def norm(self, x):
-        return self.norm_fn(x)
 
     def loss(self, inputs, statuses):
         out = torch.sum(inputs**2, dim=-1)
