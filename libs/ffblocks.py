@@ -54,6 +54,7 @@ class FFConvBlock(FFBlock):
         name="FFConvBlock",
         optimizer=None,
         device="cpu",
+        norm=None,
         activation=nn.ReLU(),
         num_classes=10,
         threshold=2.0,
@@ -61,10 +62,8 @@ class FFConvBlock(FFBlock):
         super().__init__()
         self.name = name
         self.threshold = torch.tensor(threshold).to(device)
-        self.norm_fn = nn.BatchNorm2d(channels_in)
-        if name == "conv1":
-            self.norm_fn = nn.Identity()
         self.num_classes = num_classes
+        self.norm_fn = norm if norm is not None else nn.BatchNorm2d(channels_in)
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
         # self.norm = nn.BatchNorm2d(channels_in) if use_norm else nn.Identity()
         self.act = activation
@@ -114,6 +113,7 @@ class FFLinearBlock(FFBlock):
         name="FFLinearBlock",
         optimizer=None,
         device="cpu",
+        norm=None,
         activation=nn.ReLU(),
         num_classes=10,
         threshold=2.0,
@@ -121,7 +121,7 @@ class FFLinearBlock(FFBlock):
         super().__init__()
         self.name = name
         self.threshold = torch.tensor(threshold).to(device)
-        self.norm_fn = nn.LayerNorm((ins))
+        self.norm_fn = norm if norm is not None else nn.LayerNorm((ins))
         self.num_classes = num_classes
         self.layer = nn.Linear(ins, outs, bias=True)
         # self.norm = nn.LayerNorm((ins)) if use_norm else nn.Identity()

@@ -76,6 +76,7 @@ class FFConvModel(nn.Module):
                 stride=2,
                 padding=1,
                 device=device,
+                norm=nn.Identity(),
                 name="conv1",
                 num_classes=num_classes,
             ),
@@ -154,9 +155,28 @@ class FFConvModel(nn.Module):
                     x = layer(x)
         return x
 
-    def goodness(self, inputs, labels):
+    def goodness_last_layer(self, inputs, labels):
         x = self.compute(inputs, labels)
         return (x**2).sum(dim=1)
+
+    def goodness(self, inputs, labels):
+        def eval(x):
+            return (
+                (x**2).sum(dim=(2, 3)).mean(-1)
+                if len(x.shape) == 4
+                else (x**2).sum(dim=-1)
+            )
+
+        x = inputs
+        goodness = None
+        with torch.no_grad():
+            for layer in self.layers:
+                if is_ff(layer):
+                    x = layer(x, labels)
+                    goodness = eval(x) if goodness is None else goodness + eval(x)
+                else:
+                    x = layer(x)
+        return goodness
 
     def layer_count(self):
         return len(self.layers)
