@@ -1,75 +1,10 @@
 import torch
 import torch.nn as nn
 from libs.ffblocks import FFLinearBlock, FFConvBlock, is_ff
+from libs.dispatcher import FFBolzmannDispatcher
 
 
-class FFLinearModel(nn.Module):
-    def __init__(
-        self,
-        device="cpu",
-        inner_sizes: list = [28 * 28, 500, 500],
-        num_classes: int = 10,
-    ) -> None:
-        super().__init__()
-        self.device = device
-        self.layers = []
-        for i in range(len(inner_sizes) - 1):
-            self.layers.append(
-                FFLinearBlock(
-                    ins=inner_sizes[i],
-                    outs=inner_sizes[i + 1],
-                    device=device,
-                    num_classes=num_classes,
-                    name=f"L{i}",
-                )
-            )
-        for i, layer in enumerate(self.layers):
-            self.add_module(
-                layer.name if hasattr(layer, "name") else f"layer{i}", layer
-            )
-
-    def update(self, inputs, labels, states):
-        x = inputs
-        losses = []
-        for i, layer in enumerate(self.layers):
-            x, loss = layer.update(x, labels, states)
-            losses += [loss.item()]
-        return x, losses
-
-    def update_layer(self, inputs, labels, states, layer_num):
-        x = inputs
-        losses = []
-        for i, layer in enumerate(self.layers):
-            if i == layer_num:
-                x, loss = layer.update(x, labels, states)
-                losses += [loss.item()]
-            else:
-                with torch.no_grad():
-                    x = layer(x, labels)
-        return x, losses
-
-    def compute(self, inputs, labels):
-        x = inputs
-        with torch.no_grad():
-            for layer in self.layers:
-                x = layer(x, labels)
-        return x
-
-    def goodness(self, inputs, labels):
-        x = self.compute(inputs, labels)
-        return (x**2).mean(dim=1)
-
-    def layer_count(self):
-        return len(self.layers)
-
-    def __str__(self) -> str:
-        output = ""
-        for layer in self.layers:
-            output += layer.__str__() + "\n"
-        return output
-
-
-class FFConvModel(nn.Module):
+class BolzmannModel(nn.Module):
     def __init__(
         self,
         device="cpu",
@@ -77,8 +12,7 @@ class FFConvModel(nn.Module):
     ) -> None:
         super().__init__()
         self.device = device
-        self.layers = []
-        self.layers += [
+        self.input = nn.Sequential(
             FFConvBlock(
                 channels_in=1,
                 channels_out=64,
@@ -92,25 +26,34 @@ class FFConvModel(nn.Module):
             ),
             nn.AvgPool2d(2),
             nn.Flatten(),
+        )
+        self.nodes = []
+        self.nodes += [
             FFLinearBlock(
                 ins=3136,
-                outs=256,
+                outs=3136,
                 device=device,
                 num_classes=num_classes,
-                name="dense1",
+                name="c1",
             ),
             FFLinearBlock(
-                ins=256,
-                outs=10,
+                ins=3136,
+                outs=3136,
                 device=device,
                 num_classes=num_classes,
-                name="dense2",
+                name="c2",
+            ),
+            FFLinearBlock(
+                ins=3136,
+                outs=3136,
+                device=device,
+                num_classes=num_classes,
+                name="c3",
             ),
         ]
-        for i, layer in enumerate(self.layers):
-            self.add_module(
-                layer.name if hasattr(layer, "name") else f"layer{i}", layer
-            )
+        for i, node in enumerate(self.nodes):
+            self.add_module(node.name if hasattr(node, "name") else f"node{i}", node)
+        self.dispatcher = FFBolzmannDispatcher(self, bounces=3)
 
     def update(self, inputs, labels, states):
         x = inputs
@@ -132,6 +75,20 @@ class FFConvModel(nn.Module):
                 if i == layer_num:
                     x, loss = layer.update(x, labels, states)
                     losses += [loss.item()]
+                    """
+                    with torch.no_grad():
+                        response = self.dispatcher.follower_response(
+                            layer_num, x.clone().detach(), labels
+                        )
+                        if response is not None:
+                            assert (
+                                response.size(0) == x.size(0)
+                                and len(response.shape) == 1
+                            ), "Follower response is incorrect"
+                            for i in range(len(x.shape) - 1):
+                                response = response.unsqueeze(-1)
+                            x = x + response
+                    """
                 else:
                     with torch.no_grad():
                         x = layer(x, labels)
@@ -152,17 +109,15 @@ class FFConvModel(nn.Module):
 
     def goodness_last_layer(self, inputs, labels):
         x = self.compute(inputs, labels)
-        return (x**2).mean(dim=1)
+        return (x**2).sum(dim=1)
 
     def goodness(self, inputs, labels):
         def eval(x):
-            if len(x.shape) == 4:
-                output = (x**2).mean(dim=(1, 2, 3))
-            elif len(x.shape) == 2:
-                output = (x**2).mean(dim=-1)
-            else:
-                raise Exception("Unknown shape")
-            return output
+            return (
+                (x**2).sum(dim=(2, 3)).mean(-1)
+                if len(x.shape) == 4
+                else (x**2).sum(dim=-1)
+            )
 
         x = inputs
         goodness = None

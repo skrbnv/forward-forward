@@ -1,5 +1,5 @@
 from libs.models import FFConvModel, is_ff
-from libs.loops import test_loop
+from libs.test_loop import test_loop
 import libs.utils as _utils
 import libs.dataset as dataset
 import torch
@@ -27,8 +27,8 @@ train_loader, test_loader, train_test_loader = dataset.generate(
 )
 
 
-for epoch in range(CONFIG.num_epochs):
-    print(f"├──────────── EPOCH {epoch + 1}/{CONFIG.num_epochs} ────────────")
+for epoch in range(CONFIG.num_cycles):
+    print(f"├──────────── CYCLE {epoch + 1}/{CONFIG.num_cycles} ────────────")
     for i in range(model.layer_count()):
         if not is_ff(model.layers[i]):
             print(
@@ -40,15 +40,16 @@ for epoch in range(CONFIG.num_epochs):
             f"├ Optimizing layer {i+1}/{model.layer_count()}:"
             f" {model.layers[i].__class__.__name__} ({model.layers[i].name})"
         )
-        for _pass in range(CONFIG.num_passes):
-            # train
-            loss = []
-            for inputs, labels, statuses in (pbar := tqdm(train_loader)):
-                x, losses = model.update_layer(inputs, labels, statuses, i)
-                loss += losses
+        # train
+        for _pass in range(CONFIG.num_epochs):
+            losses = []
+            for inputs, labels, states in (pbar := tqdm(train_loader)):
+                # inputs = inputs.flatten(1) # add for linear
+                x, loss = model.update_layer(inputs, labels, states, i)
+                losses += loss
                 pbar.set_description(
-                    f"├── Pass {_pass+1}/{CONFIG.num_passes}:"
-                    f" {torch.mean(torch.tensor(loss)).item():.4f}"
+                    f"├── [{_pass+1}/{CONFIG.num_epochs}]:"
+                    f" {torch.mean(torch.tensor(losses)).item():.4f}"
                 )
 
     # test

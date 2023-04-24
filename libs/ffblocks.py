@@ -21,31 +21,31 @@ class FFBlock(nn.Module):
         self.name = name
         self.threshold = torch.tensor(threshold).to(device)
         self.num_classes = num_classes
-        self.act = activation
         self.norm_fn = None
         self.layer = None
+        self.act = activation
         self.optimizer = None
 
     def norm(self, x):
         return self.norm_fn(x)
 
     def loss(self):
-        raise Exception("Not Implemented")
+        raise NotImplementedError
 
     def forward(self, x, labels):
-        x = self.merge(x, labels)
         x = self.norm(x)
+        x = self.merge(x, labels)
         x = self.layer(x)
         x = self.act(x)
         return x
 
     def merge(self):
-        raise Exception("Not Implemented")
+        raise NotImplementedError
 
-    def update(self, inputs, labels, statuses):
+    def update(self, inputs, labels, states):
         # print(f'Updating layer {self.name}')
         y = self.forward(inputs, labels)
-        loss = self.loss(y, statuses)
+        loss = self.loss(y, states)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -77,27 +77,26 @@ class FFConvBlock(FFBlock):
             activation=activation,
             device=device,
         )
-        self.norm_fn = norm if norm is not None else nn.BatchNorm2d(channels_in)
+        self.norm_fn = (
+            norm if norm is not None else self.simple_norm
+        )  # nn.BatchNorm2d(channels_in)
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
         self.optimizer = (
-            torch.optim.SGD(self.parameters(), lr=1e-4)
+            torch.optim.Adam(self.parameters(), lr=3e-2)
             if optimizer is None
             else optimizer
         )
         self.to(device)
 
-    """
-    def norm(self, x):
-        # dim = (2, 3)
-        # return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
-        return self.norm_fn(x)
-    """
+    def simple_norm(self, x):
+        dim = (1, 2, 3)
+        return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
 
-    def loss(self, inputs, statuses):
-        out = torch.sum(inputs**2, dim=(-2, -1)).mean(-1)
-        loss = statuses * (self.threshold - out)
-        loss = torch.log(1.0 + torch.exp(loss)).mean()
-        return loss
+    def loss(self, inputs, states):
+        sqs = torch.mean(inputs**2, dim=(1, 2, 3))
+        subs = states * (self.threshold - sqs)
+        losses = torch.log(1.0 + torch.exp(subs))
+        return losses.mean()
 
     def merge(self, x, y):
         shape = x.shape
@@ -130,23 +129,23 @@ class FFLinearBlock(FFBlock):
             activation=activation,
             device=device,
         )
-        self.norm_fn = norm if norm is not None else nn.LayerNorm((ins))
+        self.norm_fn = norm if norm is not None else self.simple_norm
         self.layer = nn.Linear(ins, outs, bias=True)
-        # self.norm = nn.LayerNorm((ins)) if use_norm else nn.Identity()
         self.optimizer = (
             optimizer
             if optimizer is not None
-            else torch.optim.SGD(self.parameters(), lr=1e-4)
+            else torch.optim.Adam(self.parameters(), lr=1e-2)
         )
         self.to(device)
 
-    def loss(self, inputs, statuses):
-        out = torch.sum(inputs**2, dim=-1)
-        loss = statuses * (self.threshold - out)
-        loss = torch.log(1.0 + torch.exp(loss)).mean()
-        return loss
+    def simple_norm(self, x):
+        return x / (torch.linalg.norm(x, dim=1, keepdim=True) + 1e-5)
 
-        # return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
+    def loss(self, inputs, states):
+        sqs = torch.mean(inputs**2, dim=-1)
+        subs = states * (self.threshold - sqs)
+        losses = torch.log(1.0 + torch.exp(subs))
+        return losses.mean()
 
     def merge(self, x, y):
         x[:, : self.num_classes] = one_hot(y.flatten(), num_classes=self.num_classes)

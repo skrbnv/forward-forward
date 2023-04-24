@@ -4,10 +4,10 @@ from tqdm import tqdm
 
 def test_loop(loader, model, num_classes, device):
     correct, total = 0, 0
-    for inputs, labels, _ in (pbar := tqdm(loader)):
+    for inputs, labels in (pbar := tqdm(loader)):
         for i in range(inputs.size(0)):
-            with torch.no_grad():
-                x = model.goodness(
+            with torch.no_grad():  # .flatten(1)
+                x = model.goodness_last_layer(
                     inputs[i].unsqueeze(0).repeat((num_classes, 1, 1, 1)),
                     torch.tensor([el for el in range(num_classes)]).to(device),
                 )

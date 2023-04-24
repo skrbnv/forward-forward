@@ -1,5 +1,8 @@
-num_epochs:    50
-num_passes:    5
+# Training proceeds in cycles, one layer at a time, 
+# each layer trained for number of epochs (full set 
+# of training data processed)
+num_cycles:    1
+num_epochs:    5
 num_classes:   10
 
 wandb:
