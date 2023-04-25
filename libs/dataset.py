@@ -51,8 +51,8 @@ class MNIST_GPU(MNIST):
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         img, label = self.data[index], self.targets[index]
-        # if self.train is True:
-        #    img = self.augment(img)
+        if self.train is True:
+            img = self.augment(img)
         return (img, label)
 
 

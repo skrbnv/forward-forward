@@ -7,11 +7,13 @@ class FFLinearModel(nn.Module):
     def __init__(
         self,
         device="cpu",
-        inner_sizes: list = [28 * 28, 500, 500],
+        inner_sizes: list = [28 * 28, 100, 100],
         num_classes: int = 10,
+        scale: float = 2.0,
     ) -> None:
         super().__init__()
         self.device = device
+        self.scale = scale
         self.layers = []
         for i in range(len(inner_sizes) - 1):
             self.layers.append(
@@ -29,7 +31,7 @@ class FFLinearModel(nn.Module):
             )
 
     def update(self, inputs, labels, states):
-        x = inputs
+        x = inputs / self.scale
         losses = []
         for i, layer in enumerate(self.layers):
             x, loss = layer.update(x, labels, states)
@@ -37,7 +39,7 @@ class FFLinearModel(nn.Module):
         return x, losses
 
     def update_layer(self, inputs, labels, states, layer_num):
-        x = inputs
+        x = inputs / self.scale
         losses = []
         for i, layer in enumerate(self.layers):
             if i == layer_num:
@@ -49,15 +51,36 @@ class FFLinearModel(nn.Module):
         return x, losses
 
     def compute(self, inputs, labels):
-        x = inputs
+        x = inputs / self.scale
         with torch.no_grad():
             for layer in self.layers:
                 x = layer(x, labels)
         return x
 
-    def goodness(self, inputs, labels):
+    def goodness_last_layer(self, inputs, labels):
         x = self.compute(inputs, labels)
-        return (x**2).mean(dim=1)
+        return (x**2).sum(dim=1)
+
+    def goodness(self, inputs, labels):
+        def eval(x):
+            if len(x.shape) == 4:
+                output = (x**2).sum(dim=(2, 3)).mean(dim=1)
+            elif len(x.shape) == 2:
+                output = (x**2).sum(dim=1)
+            else:
+                raise Exception("Unknown shape")
+            return output
+
+        x = inputs / self.scale
+        goodness = None
+        with torch.no_grad():
+            for layer in self.layers:
+                if is_ff(layer):
+                    x = layer(x, labels)
+                    goodness = eval(x) if goodness is None else goodness + eval(x)
+                else:
+                    x = layer(x)
+        return goodness
 
     def layer_count(self):
         return len(self.layers)
@@ -70,13 +93,10 @@ class FFLinearModel(nn.Module):
 
 
 class FFConvModel(nn.Module):
-    def __init__(
-        self,
-        device="cpu",
-        num_classes: int = 10,
-    ) -> None:
+    def __init__(self, device="cpu", num_classes: int = 10, scale: float = 2.0) -> None:
         super().__init__()
         self.device = device
+        self.scale = scale
         self.layers = []
         self.layers += [
             FFConvBlock(
@@ -113,7 +133,7 @@ class FFConvModel(nn.Module):
             )
 
     def update(self, inputs, labels, states):
-        x = inputs
+        x = inputs / self.scale
         losses = []
         for i, layer in enumerate(self.layers):
             if is_ff(layer):
@@ -125,7 +145,7 @@ class FFConvModel(nn.Module):
         return x, losses
 
     def update_layer(self, inputs, labels, states, layer_num):
-        x = inputs
+        x = inputs / self.scale
         losses = []
         for i, layer in enumerate(self.layers):
             if is_ff(layer):
@@ -141,7 +161,7 @@ class FFConvModel(nn.Module):
         return x, losses
 
     def compute(self, inputs, labels):
-        x = inputs
+        x = inputs / self.scale
         with torch.no_grad():
             for layer in self.layers:
                 if is_ff(layer):
@@ -152,19 +172,19 @@ class FFConvModel(nn.Module):
 
     def goodness_last_layer(self, inputs, labels):
         x = self.compute(inputs, labels)
-        return (x**2).mean(dim=1)
+        return (x**2).sum(dim=1)
 
     def goodness(self, inputs, labels):
         def eval(x):
             if len(x.shape) == 4:
-                output = (x**2).mean(dim=(1, 2, 3))
+                output = (x**2).sum(dim=(2, 3)).mean(dim=1)
             elif len(x.shape) == 2:
-                output = (x**2).mean(dim=-1)
+                output = (x**2).sum(dim=1)
             else:
                 raise Exception("Unknown shape")
             return output
 
-        x = inputs
+        x = inputs / self.scale
         goodness = None
         with torch.no_grad():
             for layer in self.layers:

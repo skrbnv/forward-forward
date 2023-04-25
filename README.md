@@ -2,7 +2,7 @@
 [The Forward-Forward Algorithm: Some Preliminary Investigations](https://arxiv.org/abs/2212.13345)
 
 ![Acc](./stuff/acc.png "Accuracy")
-Result via commit [515c892](https://github.com/skrbnv/forward-forward/commit/515c89261ba2ec238d14ad25257b81aba833a335) using sum (not mean) of neuron activities squared (and LayerNorm+BN). But it doesn't really matter as long as loss and goodness have same criterion.
+Loss: sum of squared neuron activities instead of mean + LayerNorm 
 
 Use __FFLinearModel__ from _libs.models_ for the sequence of linear layers.
 Use __FFConvModel__ for a more traditional mix of convolutions and linear layers.

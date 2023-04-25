@@ -1,4 +1,4 @@
-from libs.models import FFConvModel, is_ff
+from libs.models import FFConvModel as Model, is_ff
 from libs.test_loop import test_loop
 import libs.utils as _utils
 import libs.dataset as dataset
@@ -19,7 +19,7 @@ else:
     RUN_ID = _utils.get_random_hash()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = FFConvModel(device=device, num_classes=CONFIG.num_classes)
+model = Model(device=device, num_classes=CONFIG.num_classes)
 print(model)
 
 train_loader, test_loader, train_test_loader = dataset.generate(

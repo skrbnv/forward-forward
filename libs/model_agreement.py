@@ -114,9 +114,9 @@ class BolzmannModel(nn.Module):
     def goodness(self, inputs, labels):
         def eval(x):
             return (
-                (x**2).sum(dim=(2, 3)).mean(-1)
+                (x**2).sum(dim=(2, 3)).mean(dim=1)
                 if len(x.shape) == 4
-                else (x**2).sum(dim=-1)
+                else (x**2).sum(dim=1)
             )
 
         x = inputs

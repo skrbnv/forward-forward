@@ -33,8 +33,8 @@ class FFBlock(nn.Module):
         raise NotImplementedError
 
     def forward(self, x, labels):
-        x = self.norm(x)
         x = self.merge(x, labels)
+        x = self.norm(x)
         x = self.layer(x)
         x = self.act(x)
         return x
@@ -77,23 +77,21 @@ class FFConvBlock(FFBlock):
             activation=activation,
             device=device,
         )
-        self.norm_fn = (
-            norm if norm is not None else self.simple_norm
-        )  # nn.BatchNorm2d(channels_in)
+        self.norm_fn = norm if norm is not None else nn.BatchNorm2d(channels_in)
+        # self.simple_norm
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
         self.optimizer = (
-            torch.optim.Adam(self.parameters(), lr=3e-2)
+            torch.optim.SGD(self.parameters(), lr=1e-4)
             if optimizer is None
             else optimizer
         )
         self.to(device)
 
-    def simple_norm(self, x):
-        dim = (1, 2, 3)
-        return x / (torch.linalg.norm(x, dim=dim, keepdim=True) + 1e-5)
+    # def simple_norm(self, x):
+    #    return x / (torch.linalg.norm(x, dim=(1, 2, 3), keepdim=True) + 1e-5)
 
     def loss(self, inputs, states):
-        sqs = torch.mean(inputs**2, dim=(1, 2, 3))
+        sqs = torch.sum(inputs**2, dim=(2, 3)).mean(dim=1)
         subs = states * (self.threshold - sqs)
         losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
@@ -129,20 +127,22 @@ class FFLinearBlock(FFBlock):
             activation=activation,
             device=device,
         )
-        self.norm_fn = norm if norm is not None else self.simple_norm
+        self.norm_fn = (
+            norm if norm is not None else nn.LayerNorm((ins))
+        )  # self.simple_norm
         self.layer = nn.Linear(ins, outs, bias=True)
         self.optimizer = (
             optimizer
             if optimizer is not None
-            else torch.optim.Adam(self.parameters(), lr=1e-2)
+            else torch.optim.SGD(self.parameters(), lr=1e-4)
         )
         self.to(device)
 
-    def simple_norm(self, x):
-        return x / (torch.linalg.norm(x, dim=1, keepdim=True) + 1e-5)
+    # def simple_norm(self, x):
+    #    return x / (torch.linalg.norm(x, dim=1, keepdim=True) + 1e-5)
 
     def loss(self, inputs, states):
-        sqs = torch.mean(inputs**2, dim=-1)
+        sqs = torch.sum(inputs**2, dim=1)
         subs = states * (self.threshold - sqs)
         losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
