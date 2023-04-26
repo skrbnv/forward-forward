@@ -1,5 +1,6 @@
-from libs.models import FFConvModel as Model, is_ff
+from models.basic import FFConvModel as Model
 from libs.test_loop import test_loop
+from libs.ffmodel import is_ff
 import libs.utils as _utils
 import libs.dataset as dataset
 import torch

@@ -1,7 +1,55 @@
 import torch
 import torch.nn as nn
 from libs.ffblocks import FFLinearBlock, FFConvBlock, is_ff
-from libs.dispatcher import FFBolzmannDispatcher
+from typing import Optional
+from torch.optim import Optimizer
+
+
+class FFBolzmannBlock(nn.Module):
+    def __init__(
+        self,
+        bounces: int = 3,
+        name: Optional[str] = "FFBolzmannBlock",
+        threshold: Optional[float] = 2.0,
+        num_classes: Optional[int] = 10,
+        activation: Optional[nn.Module] = nn.ReLU(),
+        device: Optional[str] = "cpu",
+        optimizer: Optimizer = None,
+        nodes: list = [],
+    ) -> None:
+        super().__init__()
+        assert len(nodes) > 0, "Empty nodes list"
+        self.bounces = bounces
+        self.name = name
+        self.threshold = torch.tensor(threshold).to(device)
+        self.num_classes = num_classes
+        self.act = activation
+        self.optimizer = (
+            optimizer
+            if optimizer is not None
+            else torch.optim.SGD(self.parameters(), lr=1e-4)
+        )
+        self.nodes = nodes
+        for i, node in enumerate(self.nodes):
+            self.add_module(node.name if hasattr(node, "name") else f"node{i}", node)
+        self.to(device)
+
+    def update(self, inputs, labels, states):
+        outputs = [
+            torch.zeros(inputs.shape, dtype=inputs.dtype, device=inputs.device)
+        ] * len(self.nodes)
+        losses = []
+        for _ in range(self.bounces + 1):
+            temp = []
+            for nnum in range(len(self.nodes)):
+                echo = torch.add(
+                    torch.stack(outputs[:nnum] + outputs[nnum + 1 :], dim=0)
+                ) / (len(self.nodes) - 1)
+                temp[nnum], loss = self.nodes[nnum].update(
+                    inputs + echo, labels, states
+                )
+                losses.append(loss.item())
+            outputs = [el for el in temp.detach()]
 
 
 class BolzmannModel(nn.Module):
@@ -9,10 +57,12 @@ class BolzmannModel(nn.Module):
         self,
         device="cpu",
         num_classes: int = 10,
+        scale: float = 1.0,
     ) -> None:
         super().__init__()
         self.device = device
-        self.input = nn.Sequential(
+        self.scale = scale
+        self.prepare = nn.Sequential(
             FFConvBlock(
                 channels_in=1,
                 channels_out=64,
@@ -27,36 +77,26 @@ class BolzmannModel(nn.Module):
             nn.AvgPool2d(2),
             nn.Flatten(),
         )
-        self.nodes = []
-        self.nodes += [
-            FFLinearBlock(
-                ins=3136,
-                outs=3136,
-                device=device,
-                num_classes=num_classes,
-                name="c1",
-            ),
-            FFLinearBlock(
-                ins=3136,
-                outs=3136,
-                device=device,
-                num_classes=num_classes,
-                name="c2",
-            ),
-            FFLinearBlock(
-                ins=3136,
-                outs=3136,
-                device=device,
-                num_classes=num_classes,
-                name="c3",
-            ),
-        ]
-        for i, node in enumerate(self.nodes):
-            self.add_module(node.name if hasattr(node, "name") else f"node{i}", node)
-        self.dispatcher = FFBolzmannDispatcher(self, bounces=3)
+        self.layers = FFBolzmannBlock(
+            bounces=3,
+            name="bolzmann",
+            device=self.device,
+            nodes=[
+                FFLinearBlock(
+                    ins=3136,
+                    outs=3136,
+                    device=device,
+                    num_classes=num_classes,
+                    name="c1",
+                )
+            ]
+            * 3,
+        )
 
     def update(self, inputs, labels, states):
-        x = inputs
+        x = inputs / self.scale
+        x = self.prepare(x)
+
         losses = []
         for i, layer in enumerate(self.layers):
             if is_ff(layer):
