@@ -1,4 +1,4 @@
-from models.basic import FFConvModel as Model
+from models.conv import Model
 from libs.test_loop import test_loop
 from libs.ffmodel import is_ff
 import libs.utils as _utils
@@ -45,7 +45,7 @@ for epoch in range(CONFIG.num_cycles):
         for _pass in range(CONFIG.num_epochs):
             losses = []
             for inputs, labels, states in (pbar := tqdm(train_loader)):
-                # inputs = inputs.flatten(1) # add for linear
+                # inputs = inputs.flatten(1)  # add for linear
                 x, loss = model.update_layer(inputs, labels, states, i)
                 losses += loss
                 pbar.set_description(

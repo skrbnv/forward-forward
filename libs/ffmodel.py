@@ -3,6 +3,13 @@ import torch.nn as nn
 from libs.ffblocks import is_ff
 
 
+class FFModelAfterInit(type):
+    def __call__(cls, *args, **kwargs):
+        instance = super().__call__(*args, **kwargs)
+        instance.after_init()
+        return instance
+
+
 class FFModel(nn.Module):
     def __init__(
         self,
@@ -13,6 +20,8 @@ class FFModel(nn.Module):
         self.device = device
         self.scale = scale
         self.layers = []
+
+    def after_init(self):
         for i, layer in enumerate(self.layers):
             self.add_module(
                 layer.name if hasattr(layer, "name") else f"layer{i}", layer
