@@ -4,8 +4,8 @@ from torch.nn.functional import one_hot
 from typing import Optional
 
 
-def softplus(x):
-    return (torch.log(1 + torch.cosh(x) + x) + 0.694) / 2.0
+def dips(x):
+    return torch.log(1 + torch.cosh(x) + x) / 2.0
 
 
 def is_ff(obj):
@@ -101,7 +101,7 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
     def loss(self, inputs, states):
         sqs = torch.sqrt(torch.sum(inputs**2, dim=(2, 3))).mean(dim=1)
         subs = states * (self.threshold - sqs)
-        losses = softplus(subs)
+        losses = dips(subs)
         # losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
 
@@ -139,7 +139,7 @@ class FFLinearBlock(FFBlock, metaclass=FFBLockAfterInit):
     def loss(self, inputs, states):
         sqs = torch.sqrt(torch.sum(inputs**2, dim=1))
         subs = states * (self.threshold - sqs)
-        losses = softplus(subs)
+        losses = dips(subs)
         # losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
 
