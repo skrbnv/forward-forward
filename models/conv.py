@@ -10,6 +10,7 @@ class Model(FFModel, metaclass=FFModelAfterInit):
             FFConvBlock(
                 channels_in=1,
                 channels_out=64,
+                shape_in=(28, 28),
                 kernel_size=3,
                 stride=2,
                 padding=1,

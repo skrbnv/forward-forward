@@ -4,10 +4,6 @@ from torch.nn.functional import one_hot
 from typing import Optional
 
 
-def dips(x):
-    return torch.log(1 + torch.cosh(x) + x) / 2.0
-
-
 def is_ff(obj):
     return (
         True if isinstance(obj, FFBlock) or isinstance(obj, FFBolzmannChain) else False
@@ -82,6 +78,7 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
         self,
         channels_in,
         channels_out,
+        shape_in,
         kernel_size,
         stride,
         padding,
@@ -91,7 +88,7 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
         **kwargs,
     ):
         super().__init__(device=device, *args, **kwargs)
-        self.norm_fn = norm if norm is not None else nn.BatchNorm2d(channels_in)
+        self.norm_fn = norm if norm is not None else nn.LayerNorm(shape_in)
         # self.simple_norm
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
 
@@ -101,7 +98,7 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
     def loss(self, inputs, states):
         sqs = torch.sqrt(torch.sum(inputs**2, dim=(2, 3))).mean(dim=1)
         subs = states * (self.threshold - sqs)
-        losses = dips(subs)
+        losses = torch.log(1 + torch.cosh(subs) + subs) / 2.0
         # losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
 
@@ -139,7 +136,7 @@ class FFLinearBlock(FFBlock, metaclass=FFBLockAfterInit):
     def loss(self, inputs, states):
         sqs = torch.sqrt(torch.sum(inputs**2, dim=1))
         subs = states * (self.threshold - sqs)
-        losses = dips(subs)
+        losses = torch.log(1 + torch.cosh(subs) + subs) / 2.0
         # losses = torch.log(1.0 + torch.exp(subs))
         return losses.mean()
 

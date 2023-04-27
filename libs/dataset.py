@@ -35,6 +35,7 @@ class MNIST_GPU(MNIST):
         self,
         root: str,
         train: bool = True,
+        augment: bool = False,
         download: bool = False,
         device: str = "cpu",
     ) -> None:
@@ -42,7 +43,8 @@ class MNIST_GPU(MNIST):
         tfn = transforms.Normalize((0.1307,), (0.3081,))
         self.data = tfn((self.data / 255.0).float().unsqueeze(1).to(device))
         self.targets = self.targets.long().to(device)
-        self.augment = transforms.Compose(
+        self.augment = augment
+        self.augment_fn = transforms.Compose(
             [
                 transforms.Pad(2, fill=0, padding_mode="constant"),
                 transforms.RandomCrop(28),
@@ -51,16 +53,26 @@ class MNIST_GPU(MNIST):
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         img, label = self.data[index], self.targets[index]
-        if self.train is True:
-            img = self.augment(img)
+        if self.augment is True:
+            img = self.augment_fn(img)
         return (img, label)
 
 
 def generate(batch_size: list = [16, 16], num_workers: list = [0, 0], device="cpu"):
-    trainset = MNIST_GPU(root="./MNIST/train", train=True, download=True, device=device)
-    testset = MNIST_GPU(root="./MNIST/test", train=False, download=True, device=device)
+    trainset = MNIST_GPU(
+        root="./MNIST/train", train=True, augment=True, download=True, device=device
+    )
+    testset = MNIST_GPU(
+        root="./MNIST/test", train=False, augment=False, download=True, device=device
+    )
     traintestset = Subset(
-        MNIST_GPU(root="./MNIST/train", train=True, download=True, device=device),
+        MNIST_GPU(
+            root="./MNIST/train",
+            train=True,
+            augment=False,
+            download=True,
+            device=device,
+        ),
         range(10000),
     )
     train_loader = DataLoader(
