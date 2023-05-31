@@ -1,6 +1,6 @@
 from torch import no_grad
 import torch.nn as nn
-from libs.ffblocks import is_ff
+from libs.ffblocks import is_ff, metric
 
 
 class FFModelAfterInit(type):
@@ -14,11 +14,9 @@ class FFModel(nn.Module):
     def __init__(
         self,
         device="cpu",
-        scale: float = 1.0,
     ) -> None:
         super().__init__()
         self.device = device
-        self.scale = scale
         self.layers = []
 
     def after_init(self):
@@ -28,7 +26,7 @@ class FFModel(nn.Module):
             )
 
     def update(self, inputs, labels, states):
-        x = inputs / self.scale
+        x = inputs
         losses = []
         for i, layer in enumerate(self.layers):
             if is_ff(layer):
@@ -40,13 +38,14 @@ class FFModel(nn.Module):
         return x, losses
 
     def update_layer(self, inputs, labels, states, layer_num):
-        x = inputs / self.scale
+        x = inputs
         losses = []
         for i, layer in enumerate(self.layers):
             if is_ff(layer):
                 if i == layer_num:
                     x, loss = layer.update(x, labels, states)
                     losses += [loss.item()]
+                    break
                 else:
                     with no_grad():
                         x = layer(x, labels)
@@ -55,8 +54,16 @@ class FFModel(nn.Module):
                     x = layer(x)
         return x, losses
 
+    def reschedule(self):
+        lrs = []
+        for i in range(len(self.layers)):
+            if is_ff(self.layers[i]):
+                self.layers[i].scheduler.step()
+                lrs += [f"{self.layers[i].optimizer.param_groups[0]['lr']:.6f}"]
+        print(f"  New LR[0] are {', '.join(lrs)}")
+
     def compute(self, inputs, labels):
-        x = inputs / self.scale
+        x = inputs
         with no_grad():
             for layer in self.layers:
                 if is_ff(layer):
@@ -67,25 +74,16 @@ class FFModel(nn.Module):
 
     def goodness_last_layer(self, inputs, labels):
         x = self.compute(inputs, labels)
-        return (x**2).sum(dim=1)
+        return metric(x)
 
     def goodness(self, inputs, labels):
-        def calc(x):
-            if len(x.shape) == 4:
-                output = (x**2).sum(dim=(2, 3)).mean(dim=1)
-            elif len(x.shape) == 2:
-                output = (x**2).sum(dim=1)
-            else:
-                raise Exception("Unknown shape")
-            return output
-
-        x = inputs / self.scale
+        x = inputs
         goodness = None
         with no_grad():
             for layer in self.layers:
                 if is_ff(layer):
                     x = layer(x, labels)
-                    goodness = calc(x) if goodness is None else goodness + calc(x)
+                    goodness = metric(x) if goodness is None else goodness + metric(x)
                 else:
                     x = layer(x)
         return goodness

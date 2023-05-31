@@ -5,9 +5,30 @@ from typing import Optional
 
 
 def is_ff(obj):
-    return (
-        True if isinstance(obj, FFBlock) or isinstance(obj, FFBolzmannChain) else False
-    )
+    return True if isinstance(obj, FFBlock) else False
+
+
+def metric(x):
+    if len(x.shape) == 4:
+        output = x.pow(2).sum(dim=(2, 3)).sqrt().mean(dim=1)
+    elif len(x.shape) == 2:
+        output = x.pow(2).sum(dim=1).sqrt()
+    else:
+        raise Exception("Unsupported shape")
+    return output
+
+
+class SimpleNorm(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, x):
+        if len(x.shape) == 2:
+            return x / (torch.linalg.norm(x, ord=2, dim=1, keepdim=True) + 1e-4)
+        elif len(x.shape) == 4:
+            return x / (torch.linalg.norm(x, ord=2, dim=(-1, -2), keepdim=True) + 1e-4)
+        else:
+            raise Exception("Unsupported shape")
 
 
 class FFBLockAfterInit(type):
@@ -39,14 +60,20 @@ class FFBlock(nn.Module):
 
     def after_init(self):
         self.optimizer = (
-            torch.optim.SGD(self.parameters(), lr=1e-2)
+            torch.optim.SGD(self.parameters(), lr=5e-3)
             if self.optimizer_var is None
             else self.optimizer_var
+        )
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            self.optimizer, milestones=[10, 20], gamma=0.5
         )
         self.to(self.device)
 
     def norm(self, x):
-        return self.norm_fn(x)
+        if self.norm_fn is None or isinstance(self.norm_fn, nn.Identity):
+            return x
+        else:
+            return self.norm_fn(x)
 
     def loss(self):
         raise NotImplementedError
@@ -73,6 +100,9 @@ class FFBlock(nn.Module):
         return y, loss
 
 
+# #######################################################
+#                      Conv2d block
+# #######################################################
 class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
     def __init__(
         self,
@@ -83,23 +113,18 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
         stride,
         padding,
         device="cpu",
-        norm=None,
+        norm=nn.Identity(),
         *args,
         **kwargs,
     ):
         super().__init__(device=device, *args, **kwargs)
-        self.norm_fn = norm if norm is not None else nn.LayerNorm(shape_in)
-        # self.simple_norm
+        self.norm_fn = norm
         self.layer = nn.Conv2d(channels_in, channels_out, kernel_size, stride, padding)
 
-    # def simple_norm(self, x):
-    #    return x / (torch.linalg.norm(x, dim=(1, 2, 3), keepdim=True) + 1e-5)
-
     def loss(self, inputs, states):
-        sqs = torch.sqrt(torch.sum(inputs**2, dim=(2, 3))).mean(dim=1)
-        subs = states * (self.threshold - sqs)
-        losses = torch.log(1 + torch.cosh(subs) + subs) / 2.0
-        # losses = torch.log(1.0 + torch.exp(subs))
+        subs = states * (self.threshold - metric(inputs))
+        losses = torch.log(1 + torch.cosh(subs) + subs)
+        # losses = torch.sigmoid(subs)
         return losses.mean()
 
     def merge(self, x, y):
@@ -113,6 +138,9 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
         return x.reshape(shape)
 
 
+# #######################################################
+#                      Linear block
+# #######################################################
 class FFLinearBlock(FFBlock, metaclass=FFBLockAfterInit):
     def __init__(
         self,
@@ -124,69 +152,16 @@ class FFLinearBlock(FFBlock, metaclass=FFBLockAfterInit):
         **kwargs,
     ):
         super().__init__(device=device, *args, **kwargs)
-        self.norm_fn = (
-            norm if norm is not None else nn.LayerNorm((ins))
-        )  # self.simple_norm
+        self.norm_fn = norm if norm is not None else nn.LayerNorm((ins))
         self.layer = nn.Linear(ins, outs, bias=True)
         self.to(device)
 
-    # def simple_norm(self, x):
-    #    return x / (torch.linalg.norm(x, dim=1, keepdim=True) + 1e-5)
-
     def loss(self, inputs, states):
-        sqs = torch.sqrt(torch.sum(inputs**2, dim=1))
-        subs = states * (self.threshold - sqs)
-        losses = torch.log(1 + torch.cosh(subs) + subs) / 2.0
-        # losses = torch.log(1.0 + torch.exp(subs))
+        subs = states * (self.threshold - metric(inputs))
+        losses = torch.log(1 + torch.cosh(subs) + subs)
+        # losses = torch.sigmoid(subs)
         return losses.mean()
 
     def merge(self, x, y):
         x[:, : self.num_classes] = one_hot(y.flatten(), num_classes=self.num_classes)
         return x
-
-
-class FFBolzmannChain(nn.Module):
-    def __init__(
-        self,
-        bounces: int = 3,
-        nodes: list = [],
-        name: str = None,
-        device: str = "cpu",
-    ) -> None:
-        super().__init__()
-        assert len(nodes) > 0, "Empty nodes list"
-        self.bounces = bounces
-        self.nodes = nodes
-        self.name = name if name is not None else "Bolzmann"
-        for i, node in enumerate(self.nodes):
-            self.add_module(node.name if hasattr(node, "name") else f"node{i}", node)
-        self.device = device
-        self.to(device)
-
-    def forward(self, inputs, labels):
-        outputs = [node(inputs, labels) for node in self.nodes]
-        return torch.mean(torch.stack(outputs), dim=0)
-
-    def update(self, inputs, labels, states):
-        outputs = [
-            torch.zeros(inputs.shape, dtype=inputs.dtype, device=inputs.device)
-        ] * len(self.nodes)
-        losses = []
-        for _ in range(self.bounces + 1):
-            temp = []
-            for nnum in range(len(self.nodes)):
-                echo = torch.mean(
-                    torch.stack(outputs[:nnum] + outputs[nnum + 1 :]), dim=0
-                )
-                temp[nnum], loss = self.nodes[nnum].update(
-                    inputs + echo, labels, states
-                )
-                losses.append(loss.item())
-            outputs = [el for el in temp.detach()]
-
-    def __str__(self) -> str:
-        output = "Bolzmann(\n"
-        for node in self.nodes:
-            output += f" ({node.name}): " + node.__str__() + "\n"
-        output += ")\n"
-        return output

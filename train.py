@@ -27,7 +27,6 @@ train_loader, test_loader, train_test_loader = dataset.generate(
     CONFIG.dataset.batch_size, CONFIG.dataset.num_workers, device
 )
 
-
 for epoch in range(CONFIG.num_cycles):
     print(f"├──────────── CYCLE {epoch + 1}/{CONFIG.num_cycles} ────────────")
     for i in range(model.layer_count()):
@@ -52,6 +51,7 @@ for epoch in range(CONFIG.num_cycles):
                     f"├── [{_pass+1}/{CONFIG.num_epochs}]:"
                     f" {torch.mean(torch.tensor(losses)).item():.4f}"
                 )
+    model.reschedule()
 
     # test
     train_acc = test_loop(train_test_loader, model, CONFIG.num_classes, device)

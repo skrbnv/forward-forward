@@ -26,6 +26,7 @@ class Model(FFModel, metaclass=FFModelAfterInit):
                 outs=256,
                 device=device,
                 num_classes=num_classes,
+                norm=nn.LayerNorm(3136),
                 name="dense1",
             ),
             FFLinearBlock(
@@ -33,7 +34,8 @@ class Model(FFModel, metaclass=FFModelAfterInit):
                 outs=10,
                 device=device,
                 num_classes=num_classes,
-                name="dense2",
+                norm=nn.LayerNorm(256),
+                name="dense1",
             ),
         ]
         for i, layer in enumerate(self.layers):
