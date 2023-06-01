@@ -42,7 +42,8 @@ class FFBlock(nn.Module):
     def __init__(
         self,
         name: Optional[str] = "FFBlock",
-        threshold: Optional[float] = 2.0,
+        threshold: Optional[float] = 1.6,
+        spacing: Optional[float] = 0,
         num_classes: Optional[int] = 10,
         activation: Optional[nn.Module] = nn.ReLU(),
         optimizer: Optional[nn.Module] = None,
@@ -51,6 +52,7 @@ class FFBlock(nn.Module):
         super().__init__()
         self.name = name
         self.threshold = torch.tensor(threshold).to(device)
+        self.spacing = torch.tensor(spacing).to(device)
         self.num_classes = num_classes
         self.norm_fn = None
         self.layer = None
@@ -123,7 +125,7 @@ class FFConvBlock(FFBlock, metaclass=FFBLockAfterInit):
 
     def loss(self, inputs, states):
         subs = states * (self.threshold - metric(inputs))
-        losses = torch.log(1 + torch.cosh(subs) + subs)
+        losses = torch.log(1 + torch.cosh(subs + self.spacing) + subs + self.spacing)
         # losses = torch.sigmoid(subs)
         return losses.mean()
 
@@ -158,7 +160,7 @@ class FFLinearBlock(FFBlock, metaclass=FFBLockAfterInit):
 
     def loss(self, inputs, states):
         subs = states * (self.threshold - metric(inputs))
-        losses = torch.log(1 + torch.cosh(subs) + subs)
+        losses = torch.log(1 + torch.cosh(subs + self.spacing) + subs + self.spacing)
         # losses = torch.sigmoid(subs)
         return losses.mean()
 
